@@ -36,7 +36,7 @@ AI-агент на базе **GigaChat** для управления проек�
 
 ```bash
 # Клонировать
-git clone https://github.com/YOUR_USER/gigabot.git
+git clone https://github.com/SoapMaker101/gigabot.git
 cd gigabot
 
 # Создать виртуальное окружение
@@ -105,7 +105,7 @@ sudo apt update && sudo apt install -y python3.11 python3.11-venv tesseract-ocr 
 sudo mkdir -p /opt/gigabot
 sudo python3.11 -m venv /opt/gigabot/venv
 source /opt/gigabot/venv/bin/activate
-git clone https://github.com/YOUR_USER/gigabot.git /opt/gigabot/source
+git clone https://github.com/SoapMaker101/gigabot.git /opt/gigabot/source
 pip install -e /opt/gigabot/source
 
 # Настройка
@@ -219,6 +219,29 @@ gigabot/
 ### Brave Search
 1. Зарегистрируйтесь на [brave.com/search/api](https://brave.com/search/api/)
 2. Получите API key
+
+## Обновление на сервере
+
+```bash
+cd ~/gigabot
+git pull origin main
+pip install -e .
+sudo systemctl restart gigabot
+```
+
+Проверка:
+
+```bash
+sudo systemctl status gigabot
+sudo journalctl -u gigabot -n 50 --no-pager
+```
+
+## Важные особенности GigaChat API
+
+- **Результаты функций** должны быть валидным JSON. GigaBot автоматически оборачивает текстовые результаты в `{"result": "..."}`.
+- **`functions_state_id`** — GigaChat возвращает идентификатор состояния при вызове функций. GigaBot сохраняет и передаёт его для корректной работы цепочек вызовов.
+- **`function_call: "auto"`** — передаётся автоматически когда доступны функции.
+- **Telegram ID** в `allowFrom` должен быть строкой: `"allowFrom": ["744902182"]`, не числом.
 
 ## Лицензия
 
