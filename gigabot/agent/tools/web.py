@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+from loguru import logger
 
 from gigabot.agent.tools.base import Tool
 
@@ -139,28 +140,39 @@ class WebTool(Tool):
     async def _fetch(
         self, url: str = "", extract_mode: str = "markdown", max_chars: int | None = None, **_: Any,
     ) -> str:
-        from readability import Document
-
         if not url:
-            return "Error: 'url' is required for fetch"
+            return "Error: 'url' is required for fetch. Пример: web(action='fetch', url='https://example.com')"
 
         limit = max_chars or self.max_chars
 
         is_valid, error_msg = _validate_url(url)
         if not is_valid:
+            logger.warning("web_fetch: invalid URL '{}': {}", url, error_msg)
             return json.dumps(
                 {"error": f"URL validation failed: {error_msg}", "url": url},
                 ensure_ascii=False,
             )
 
         try:
+            from readability import Document
+        except ImportError:
+            logger.error("web_fetch: readability-lxml not installed")
+            return json.dumps(
+                {"error": "readability-lxml not installed. Run: pip install readability-lxml", "url": url},
+                ensure_ascii=False,
+            )
+
+        try:
+            logger.info("web_fetch: fetching {}", url)
             async with httpx.AsyncClient(
                 follow_redirects=True,
                 max_redirects=MAX_REDIRECTS,
                 timeout=30.0,
+                verify=True,
             ) as client:
                 r = await client.get(url, headers={"User-Agent": USER_AGENT})
                 r.raise_for_status()
+            logger.info("web_fetch: {} → status {}", url, r.status_code)
 
             ctype = r.headers.get("content-type", "")
 
@@ -193,8 +205,21 @@ class WebTool(Tool):
                 },
                 ensure_ascii=False,
             )
+        except httpx.ConnectError as e:
+            logger.error("web_fetch: connection failed for {}: {}", url, e)
+            return json.dumps({"error": f"Connection failed: {e}", "url": url}, ensure_ascii=False)
+        except httpx.TimeoutException as e:
+            logger.error("web_fetch: timeout for {}: {}", url, e)
+            return json.dumps({"error": f"Request timed out: {e}", "url": url}, ensure_ascii=False)
+        except httpx.HTTPStatusError as e:
+            logger.error("web_fetch: HTTP {} for {}", e.response.status_code, url)
+            return json.dumps(
+                {"error": f"HTTP {e.response.status_code}: {e.response.reason_phrase}", "url": url},
+                ensure_ascii=False,
+            )
         except Exception as e:
-            return json.dumps({"error": str(e), "url": url}, ensure_ascii=False)
+            logger.error("web_fetch: unexpected error for {}: {} ({})", url, e, type(e).__name__)
+            return json.dumps({"error": f"{type(e).__name__}: {e}", "url": url}, ensure_ascii=False)
 
     def _to_markdown(self, raw_html: str) -> str:
         """Convert HTML to markdown."""

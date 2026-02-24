@@ -226,7 +226,7 @@ class FileTool(Tool):
 
     async def _read(self, path: str = "", **_: Any) -> str:
         if not path:
-            return "Error: 'path' is required for read"
+            return "Error: 'path' is required for read. Пример: file(action='read', path='documents/file.txt')"
         file_path = _resolve_path(path, self._workspace, self._allowed_dir)
         if not file_path.exists():
             return f"Error: File not found: {path}"
@@ -236,9 +236,9 @@ class FileTool(Tool):
 
     async def _write(self, path: str = "", content: str = "", **_: Any) -> str:
         if not path:
-            return "Error: 'path' is required for write"
+            return "Error: 'path' is required for write. Пример: file(action='write', path='output.txt', content='...')"
         if not content:
-            return "Error: 'content' is required for write"
+            return "Error: 'content' is required for write. Пример: file(action='write', path='output.txt', content='текст файла')"
         file_path = _resolve_path(path, self._workspace, self._allowed_dir)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         ext = file_path.suffix.lower()
@@ -290,9 +290,9 @@ class FileTool(Tool):
 
     async def _move(self, path: str = "", destination: str = "", **_: Any) -> str:
         if not path:
-            return "Error: 'path' is required for move"
+            return "Error: 'path' is required for move. Пример: file(action='move', path='file.txt', destination='folder/file.txt')"
         if not destination:
-            return "Error: 'destination' is required for move"
+            return "Error: 'destination' is required for move. Пример: file(action='move', path='file.txt', destination='folder/file.txt')"
         src = _resolve_path(path, self._workspace, self._allowed_dir)
         dst = _resolve_path(destination, self._workspace, self._allowed_dir)
         if not src.exists():

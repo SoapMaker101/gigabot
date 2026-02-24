@@ -39,11 +39,11 @@ class RAGTool(Tool):
 
     @property
     def name(self) -> str:
-        return "rag"
+        return "knowledge"
 
     @property
     def description(self) -> str:
-        return "База знаний (RAG): создание коллекций, индексация документов, семантический поиск по содержимому файлов. НЕ путать с project (папки проектов)."
+        return "База знаний: создать коллекцию, добавить файл, искать по документам"
 
     @property
     def parameters(self) -> dict[str, Any]:
@@ -150,7 +150,7 @@ class RAGTool(Tool):
     async def _create_project(self, **kwargs: Any) -> str:
         project = kwargs.get("project")
         if not project:
-            return "Ошибка: не указано имя проекта (project)"
+            return "Ошибка: не указано имя проекта. Пример: knowledge(action='create_project', project='мой_проект')"
 
         existing = [c.name for c in self._client.list_collections()]
         if project in existing:
@@ -186,9 +186,9 @@ class RAGTool(Tool):
         project = kwargs.get("project")
         file_path = kwargs.get("file_path")
         if not project:
-            return "Ошибка: не указано имя проекта (project)"
+            return "Ошибка: не указано имя проекта. Пример: knowledge(action='index_file', project='мой_проект', file_path='docs/file.pdf')"
         if not file_path:
-            return "Ошибка: не указан путь к файлу (file_path)"
+            return "Ошибка: не указан путь к файлу. Пример: knowledge(action='index_file', project='мой_проект', file_path='docs/file.pdf')"
 
         text = self._read_file(file_path)
         if text.startswith("Error"):
@@ -270,9 +270,9 @@ class RAGTool(Tool):
         query = kwargs.get("query")
         top_k = kwargs.get("top_k", self._top_k)
         if not project:
-            return "Ошибка: не указано имя проекта (project)"
+            return "Ошибка: не указано имя проекта. Пример: knowledge(action='search', project='мой_проект', query='текст запроса')"
         if not query:
-            return "Ошибка: не указан поисковый запрос (query)"
+            return "Ошибка: не указан поисковый запрос. Пример: knowledge(action='search', project='мой_проект', query='текст запроса')"
 
         try:
             collection = self._client.get_collection(project)

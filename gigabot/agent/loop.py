@@ -53,7 +53,7 @@ class AgentLoop:
         provider: LLMProvider,
         workspace: Path,
         model: str | None = None,
-        max_iterations: int = 20,
+        max_iterations: int = 7,
         temperature: float = 0.7,
         max_tokens: int = 8192,
         memory_window: int = 50,
@@ -169,6 +169,14 @@ class AgentLoop:
             return f'{tc.name}("{val[:40]}…")' if len(val) > 40 else f'{tc.name}("{val}")'
         return ", ".join(_fmt(tc) for tc in tool_calls)
 
+    @staticmethod
+    def _is_loop(recent_calls: list[tuple[str, str]], threshold: int = 3) -> bool:
+        """Detect tool call loops: same (name, args) repeated *threshold* times in a row."""
+        if len(recent_calls) < threshold:
+            return False
+        tail = recent_calls[-threshold:]
+        return all(c == tail[0] for c in tail)
+
     async def _run_agent_loop(
         self,
         initial_messages: list[dict],
@@ -179,6 +187,7 @@ class AgentLoop:
         iteration = 0
         final_content = None
         tools_used: list[str] = []
+        recent_calls: list[tuple[str, str]] = []
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -214,17 +223,53 @@ class AgentLoop:
                     functions_state_id=response.functions_state_id,
                 )
 
+                loop_detected = False
                 for tool_call in response.tool_calls:
                     tools_used.append(tool_call.name)
-                    args_str = json.dumps(tool_call.arguments, ensure_ascii=False)
+                    args_str = json.dumps(tool_call.arguments, ensure_ascii=False, sort_keys=True)
                     logger.info("Tool call: {}({})", tool_call.name, args_str[:200])
+
+                    recent_calls.append((tool_call.name, args_str))
+                    if self._is_loop(recent_calls):
+                        logger.warning(
+                            "Loop detected: {}() called {} times with same args — aborting",
+                            tool_call.name, 3,
+                        )
+                        result = (
+                            f"ОШИБКА: Обнаружен цикл — {tool_call.name} вызван 3 раза подряд "
+                            f"с одинаковыми аргументами. Прекрати повторять вызов и ответь "
+                            f"пользователю текстом, объяснив проблему."
+                        )
+                        messages = self.context.add_tool_result(
+                            messages, tool_call.id, tool_call.name, result,
+                        )
+                        loop_detected = True
+                        break
+
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result,
                     )
+
+                if loop_detected:
+                    response = await self.provider.chat(
+                        messages=messages,
+                        tools=self.tools.get_definitions(),
+                        model=self.model,
+                        temperature=self.temperature,
+                        max_tokens=self.max_tokens,
+                    )
+                    final_content = self._strip_think(response.content)
+                    break
             else:
                 final_content = self._strip_think(response.content)
                 break
+
+        if iteration >= self.max_iterations:
+            logger.warning("Agent loop hit max_iterations ({})", self.max_iterations)
+            final_content = final_content or (
+                "Достигнут лимит итераций. Пожалуйста, переформулируй запрос."
+            )
 
         return final_content, tools_used
 
