@@ -464,6 +464,13 @@ class ProjectTool(Tool):
         shutil.rmtree(target)
         return f"Deleted folder '{folder_name}' from project '{name}'"
 
+    @staticmethod
+    def _clean_telegram_filename(name: str) -> str:
+        """Strip Telegram file_id prefix like 'BQACAgIAAxkBAAIC_05_' from filename."""
+        import re
+        cleaned = re.sub(r'^[A-Za-z]{2}[A-Za-z0-9]{10,}_\d+_', '', name)
+        return cleaned if cleaned and cleaned != name else name
+
     async def _move_file(self, name: str = "", folder_name: str = "", file_path: str = "", **_: Any) -> str:
         if not name:
             return (
@@ -487,15 +494,23 @@ class ProjectTool(Tool):
         if not src.is_file():
             return f"Error: Not a file: {file_path}"
 
+        subfolders = sorted(d.name for d in project_dir.iterdir() if d.is_dir())
+
         if folder_name:
             target_dir = project_dir / folder_name
             if not target_dir.exists():
-                subfolders = sorted(d.name for d in project_dir.iterdir() if d.is_dir())
                 hint = f" Доступные подпапки: {', '.join(subfolders)}" if subfolders else ""
                 return f"Error: Folder '{folder_name}' not found in project '{name}'.{hint}"
         else:
+            if subfolders:
+                return (
+                    f"Error: 'folder_name' is required — project '{name}' has subfolders. "
+                    f"Укажи подпапку: {', '.join(subfolders)}. "
+                    f"Пример: project(action='move_file', name='{name}', folder_name='{subfolders[0]}', file_path='...')"
+                )
             target_dir = project_dir
 
-        dst = target_dir / src.name
+        clean_name = self._clean_telegram_filename(src.name)
+        dst = target_dir / clean_name
         shutil.move(str(src), str(dst))
-        return f"Файл '{src.name}' перемещён в проект '{name}'" + (f"/{folder_name}" if folder_name else "")
+        return f"Файл '{clean_name}' перемещён в проект '{name}/{folder_name}'" if folder_name else f"Файл '{clean_name}' перемещён в проект '{name}'"
