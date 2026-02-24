@@ -169,6 +169,35 @@ class AgentLoop:
             return f'{tc.name}("{val[:40]}…")' if len(val) > 40 else f'{tc.name}("{val}")'
         return ", ".join(_fmt(tc) for tc in tool_calls)
 
+    _FILE_REF_RE = re.compile(r"\[file:\s*([^\]]+)\]")
+
+    @classmethod
+    def _extract_file_refs(cls, messages: list[dict]) -> list[str]:
+        """Extract [file: /path] references from the last user message."""
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    return cls._FILE_REF_RE.findall(content)
+                break
+        return []
+
+    @staticmethod
+    def _patch_file_path(arguments: dict, file_refs: list[str]) -> dict:
+        """Auto-fill file_path from [file:] refs when the model forgot it."""
+        if not file_refs:
+            return arguments
+        if "file_path" in arguments and arguments["file_path"]:
+            return arguments
+        has_file_path_param = "file_path" in arguments or arguments.get("action") in (
+            "move_file", "index_file",
+        )
+        if has_file_path_param:
+            patched = dict(arguments)
+            patched["file_path"] = file_refs[0].strip()
+            return patched
+        return arguments
+
     @staticmethod
     def _is_loop(recent_calls: list[tuple[str, str]], threshold: int = 3) -> bool:
         """Detect tool call loops: same (name, args) repeated *threshold* times in a row."""
@@ -188,6 +217,7 @@ class AgentLoop:
         final_content = None
         tools_used: list[str] = []
         recent_calls: list[tuple[str, str]] = []
+        file_refs = self._extract_file_refs(messages)
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -226,6 +256,13 @@ class AgentLoop:
                 loop_detected = False
                 for tool_call in response.tool_calls:
                     tools_used.append(tool_call.name)
+
+                    patched_args = self._patch_file_path(tool_call.arguments, file_refs)
+                    if patched_args is not tool_call.arguments:
+                        logger.info("Auto-filled file_path from [file:] ref: {}",
+                                    patched_args.get("file_path", "")[:100])
+                        tool_call.arguments = patched_args
+
                     args_str = json.dumps(tool_call.arguments, ensure_ascii=False, sort_keys=True)
                     logger.info("Tool call: {}({})", tool_call.name, args_str[:200])
 
