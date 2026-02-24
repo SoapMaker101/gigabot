@@ -148,9 +148,12 @@ RAG-инструменты используй только когда польз
         content: str | None,
         tool_calls: list[dict[str, Any]] | None = None,
         reasoning_content: str | None = None,
+        functions_state_id: str | None = None,
     ) -> list[dict[str, Any]]:
         msg: dict[str, Any] = {"role": "assistant", "content": content}
         if tool_calls:
             msg["tool_calls"] = tool_calls
+        if functions_state_id:
+            msg["functions_state_id"] = functions_state_id
         messages.append(msg)
         return messages

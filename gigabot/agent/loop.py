@@ -221,6 +221,7 @@ class AgentLoop:
                 ]
                 messages = self.context.add_assistant_message(
                     messages, response.content, tool_call_dicts,
+                    functions_state_id=response.functions_state_id,
                 )
 
                 for tool_call in response.tool_calls:

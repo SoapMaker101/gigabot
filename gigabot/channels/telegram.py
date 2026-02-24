@@ -562,7 +562,12 @@ class TelegramChannel(BaseChannel):
             logger.debug("SaluteSpeech credentials missing, skipping transcription")
             return "[Voice message received, SaluteSpeech not configured]"
 
+        logger.debug("Calling SaluteSpeech STT for {}", file_path)
         result = await _transcribe_voice(file_path, cfg)
+        if result:
+            logger.info("SaluteSpeech transcription OK: {}...", result[:80])
+        else:
+            logger.warning("SaluteSpeech returned empty result for {}", file_path)
         return result
 
     # ------------------------------------------------------------------

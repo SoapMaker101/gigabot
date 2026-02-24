@@ -63,12 +63,20 @@ def _convert_messages_to_gigachat(messages: list[dict[str, Any]]) -> list[Messag
                     name=func.get("name", ""),
                     arguments=args_raw,
                 )
+            if msg.get("functions_state_id"):
+                giga_msg.functions_state_id = msg["functions_state_id"]
             result.append(giga_msg)
 
         elif role_str == "tool":
+            # GigaChat requires function results to be valid JSON
+            try:
+                json.loads(content)
+                json_content = content
+            except (json.JSONDecodeError, TypeError):
+                json_content = json.dumps({"result": content}, ensure_ascii=False)
             result.append(Messages(
                 role=MessagesRole.FUNCTION,
-                content=content,
+                content=json_content,
             ))
 
     return result
@@ -123,6 +131,7 @@ class GigaChatProvider(LLMProvider):
 
         if tools:
             kwargs["functions"] = _openai_tools_to_gigachat_functions(tools)
+            kwargs["function_call"] = "auto"
 
         try:
             chat_request = Chat(**kwargs)
@@ -168,11 +177,14 @@ class GigaChatProvider(LLMProvider):
         if tool_calls and not content:
             content = ""
 
+        functions_state_id = getattr(message, "functions_state_id", None)
+
         return LLMResponse(
             content=content,
             tool_calls=tool_calls,
             finish_reason=choice.finish_reason or "stop",
             usage=usage,
+            functions_state_id=functions_state_id,
         )
 
     def get_embeddings(self, texts: list[str], model: str = "Embeddings") -> list[list[float]]:
