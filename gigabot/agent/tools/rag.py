@@ -109,6 +109,15 @@ class RAGTool(Tool):
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _list_collection_names(self) -> list[str]:
+        """Get collection names — compatible with ChromaDB v0.5 and v0.6+."""
+        raw = self._client.list_collections()
+        if not raw:
+            return []
+        if isinstance(raw[0], str):
+            return raw
+        return [c.name for c in raw]
+
     def _get_or_create_collection(self, project: str):
         return self._client.get_or_create_collection(
             name=project,
@@ -152,7 +161,7 @@ class RAGTool(Tool):
         if not project:
             return "Ошибка: не указано имя проекта. Пример: knowledge(action='create_project', project='мой_проект')"
 
-        existing = [c.name for c in self._client.list_collections()]
+        existing = self._list_collection_names()
         if project in existing:
             return f"Проект '{project}' уже существует."
 
@@ -173,14 +182,14 @@ class RAGTool(Tool):
             return f"Ошибка: проект '{project}' не найден."
 
     async def _list_projects(self, **kwargs: Any) -> str:
-        collections = self._client.list_collections()
-        if not collections:
+        names = self._list_collection_names()
+        if not names:
             return "Нет созданных проектов базы знаний."
         lines: list[str] = []
-        for col in collections:
-            c = self._client.get_collection(col.name)
-            lines.append(f"  • {col.name} ({c.count()} документов)")
-        return f"Проекты ({len(collections)}):\n" + "\n".join(lines)
+        for name in names:
+            c = self._client.get_collection(name)
+            lines.append(f"  • {name} ({c.count()} документов)")
+        return f"Проекты ({len(names)}):\n" + "\n".join(lines)
 
     async def _index_file(self, **kwargs: Any) -> str:
         project = kwargs.get("project")

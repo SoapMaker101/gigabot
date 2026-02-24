@@ -66,8 +66,8 @@ class WebTool(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["search", "fetch"],
-                    "description": "Action: search the web or fetch a URL",
+                    "enum": ["search", "read_url"],
+                    "description": "search — поиск в интернете, read_url — прочитать содержимое сайта по URL",
                 },
                 "query": {
                     "type": "string",
@@ -75,7 +75,7 @@ class WebTool(Tool):
                 },
                 "url": {
                     "type": "string",
-                    "description": "URL to fetch (for fetch action)",
+                    "description": "URL сайта для чтения (для read_url)",
                 },
                 "count": {
                     "type": "integer",
@@ -100,9 +100,9 @@ class WebTool(Tool):
     async def execute(self, action: str, **kwargs: Any) -> str:
         if action == "search":
             return await self._search(**kwargs)
-        if action == "fetch":
+        if action in ("read_url", "fetch"):
             return await self._fetch(**kwargs)
-        return f"Error: unknown action '{action}'. Use: search, fetch"
+        return f"Error: unknown action '{action}'. Use: search, read_url"
 
     async def _search(self, query: str = "", count: int | None = None, **_: Any) -> str:
         if not query:
@@ -141,7 +141,7 @@ class WebTool(Tool):
         self, url: str = "", extract_mode: str = "markdown", max_chars: int | None = None, **_: Any,
     ) -> str:
         if not url:
-            return "Error: 'url' is required for fetch. Пример: web(action='fetch', url='https://example.com')"
+            return "Error: 'url' is required. Пример: web(action='read_url', url='https://example.com')"
 
         limit = max_chars or self.max_chars
 

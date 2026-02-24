@@ -356,8 +356,8 @@ class ProjectTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Управление папками проектов: создание со стандартной структурой, "
-            "просмотр, добавление/удаление подпапок"
+            "Управление папками проектов: создание, просмотр, подпапки, "
+            "перемещение файлов в проект"
         )
 
     @property
@@ -367,7 +367,7 @@ class ProjectTool(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["create", "list", "add_folder", "delete_folder"],
+                    "enum": ["create", "list", "add_folder", "delete_folder", "move_file"],
                     "description": "Action to perform",
                 },
                 "name": {
@@ -376,7 +376,11 @@ class ProjectTool(Tool):
                 },
                 "folder_name": {
                     "type": "string",
-                    "description": "Subfolder name (for add_folder / delete_folder)",
+                    "description": "Subfolder name (for add_folder / delete_folder / move_file)",
+                },
+                "file_path": {
+                    "type": "string",
+                    "description": "Path to file to move into project (for move_file)",
                 },
             },
             "required": ["action"],
@@ -388,10 +392,11 @@ class ProjectTool(Tool):
             "list": self._list,
             "add_folder": self._add_folder,
             "delete_folder": self._delete_folder,
+            "move_file": self._move_file,
         }
         handler = dispatch.get(action)
         if not handler:
-            return f"Error: unknown action '{action}'. Use: create, list, add_folder, delete_folder"
+            return f"Error: unknown action '{action}'. Use: create, list, add_folder, delete_folder, move_file"
         try:
             return await handler(**kwargs)
         except PermissionError as e:
@@ -458,3 +463,39 @@ class ProjectTool(Tool):
             return f"Error: Folder '{folder_name}' not found in project '{name}'"
         shutil.rmtree(target)
         return f"Deleted folder '{folder_name}' from project '{name}'"
+
+    async def _move_file(self, name: str = "", folder_name: str = "", file_path: str = "", **_: Any) -> str:
+        if not name:
+            return (
+                "Error: 'name' (project name) is required. "
+                "Пример: project(action='move_file', name='Коттедж', folder_name='Договора', file_path='/path/to/file.pdf')"
+            )
+        if not file_path:
+            return (
+                "Error: 'file_path' is required. "
+                "Пример: project(action='move_file', name='Коттедж', folder_name='Договора', file_path='/path/to/file.pdf')"
+            )
+        project_dir = self._projects_dir / name
+        if not project_dir.exists():
+            available = sorted(p.name for p in self._projects_dir.iterdir() if p.is_dir()) if self._projects_dir.exists() else []
+            hint = f" Доступные проекты: {', '.join(available)}" if available else ""
+            return f"Error: Project '{name}' not found.{hint}"
+
+        src = _resolve_path(file_path, self._workspace, self._allowed_dir)
+        if not src.exists():
+            return f"Error: File not found: {file_path}"
+        if not src.is_file():
+            return f"Error: Not a file: {file_path}"
+
+        if folder_name:
+            target_dir = project_dir / folder_name
+            if not target_dir.exists():
+                subfolders = sorted(d.name for d in project_dir.iterdir() if d.is_dir())
+                hint = f" Доступные подпапки: {', '.join(subfolders)}" if subfolders else ""
+                return f"Error: Folder '{folder_name}' not found in project '{name}'.{hint}"
+        else:
+            target_dir = project_dir
+
+        dst = target_dir / src.name
+        shutil.move(str(src), str(dst))
+        return f"Файл '{src.name}' перемещён в проект '{name}'" + (f"/{folder_name}" if folder_name else "")
