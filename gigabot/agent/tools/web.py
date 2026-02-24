@@ -57,7 +57,7 @@ class WebTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Поиск в интернете и получение содержимого веб-страниц"
+        return "Поиск в интернете (search) и открытие/чтение сайтов по URL (read_url). Используй когда пользователь просит открыть сайт, URL или ссылку."
 
     @property
     def parameters(self) -> dict[str, Any]:

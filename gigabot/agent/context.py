@@ -88,7 +88,7 @@ class ContextBuilder:
 
 1. **file** — чтение/создание/редактирование файлов и просмотр каталогов (action: read, write, edit, list, move)
 2. **project** — управление проектами: создание, просмотр, подпапки, перемещение файлов В проект (action: create, list, add_folder, delete_folder, move_file)
-3. **web** — поиск в интернете и чтение содержимого веб-страниц (action: search, read_url)
+3. **web** — поиск в интернете и ОТКРЫТИЕ/ЧТЕНИЕ сайтов по URL (action: search, read_url). Ты МОЖЕШЬ открывать сайты!
 4. **exec** — выполнение shell-команд на сервере (df -h, mkdir, ls и т.д.)
 5. **message** — отправка сообщений и файлов пользователю
 6. **cron** — напоминания и задачи по расписанию (action: add, list, remove)

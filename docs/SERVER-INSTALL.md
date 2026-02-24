@@ -11,8 +11,10 @@
 
 ```bash
 sudo apt update
-sudo apt install -y python3.11 python3.11-venv tesseract-ocr tesseract-ocr-rus git
+sudo apt install -y python3.11 python3.11-venv python3.11-dev libffi-dev tesseract-ocr tesseract-ocr-rus git
 ```
+
+> **Важно:** `libffi-dev` и `python3.11-dev` необходимы для пакета `cffi`, от которого зависит `cryptography` → `pdfminer.six` → `pdfplumber` (чтение PDF). Без них `import pdfplumber` упадёт с `ModuleNotFoundError: No module named '_cffi_backend'`.
 
 ## Шаг 2. Создать пользователя (опционально)
 
@@ -101,4 +103,31 @@ sudo journalctl -u gigabot -f
 
 # Перезапуск
 sudo systemctl restart gigabot
+```
+
+## Решение проблем
+
+### PDF не читается: `ModuleNotFoundError: No module named '_cffi_backend'`
+
+Проблема: pdfplumber установлен, но import падает из-за сломанного cffi.
+
+```bash
+# Проверить
+source ~/gigabot/.venv/bin/activate
+python -c "import pdfplumber; print(pdfplumber.__version__)"
+
+# Исправить
+sudo apt install -y libffi-dev python3.11-dev
+pip install --force-reinstall cffi
+sudo systemctl restart gigabot
+```
+
+### Проверка всех ключевых зависимостей
+
+```bash
+source ~/gigabot/.venv/bin/activate
+python -c "import pdfplumber; print('pdfplumber', pdfplumber.__version__)"
+python -c "from readability import Document; print('readability OK')"
+python -c "import chromadb; print('chromadb', chromadb.__version__)"
+python -c "import pytesseract; print('pytesseract', pytesseract.__version__)"
 ```

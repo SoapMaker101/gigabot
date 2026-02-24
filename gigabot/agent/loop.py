@@ -170,6 +170,11 @@ class AgentLoop:
         return ", ".join(_fmt(tc) for tc in tool_calls)
 
     _FILE_REF_RE = re.compile(r"\[file:\s*([^\]]+)\]")
+    _URL_RE = re.compile(r"https?://[^\s\]]+")
+    _WEB_TRIGGER_RE = re.compile(
+        r"(?:открой|прочитай|прочти|покажи|загрузи|зайди|посмотри)\s.{0,20}(?:сайт|страниц|ссылк|url)",
+        re.IGNORECASE,
+    )
 
     @classmethod
     def _extract_file_refs(cls, messages: list[dict]) -> list[str]:
@@ -181,6 +186,20 @@ class AgentLoop:
                     return cls._FILE_REF_RE.findall(content)
                 break
         return []
+
+    @classmethod
+    def _detect_web_request(cls, messages: list[dict]) -> str | None:
+        """If user asked to open a URL but model didn't call web tool, return the URL."""
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                content = msg.get("content", "")
+                if not isinstance(content, str):
+                    return None
+                urls = cls._URL_RE.findall(content)
+                if urls and (cls._WEB_TRIGGER_RE.search(content) or content.strip().startswith("http")):
+                    return urls[0]
+                return None
+        return None
 
     @staticmethod
     def _patch_file_path(arguments: dict, file_refs: list[str]) -> dict:
@@ -299,6 +318,15 @@ class AgentLoop:
                     final_content = self._strip_think(response.content)
                     break
             else:
+                if iteration == 1:
+                    url = self._detect_web_request(messages)
+                    if url and self.tools.get("web"):
+                        logger.info("Web fallback: model skipped web tool, auto-calling read_url for {}", url)
+                        result = await self.tools.execute("web", {"action": "read_url", "url": url})
+                        tools_used.append("web")
+                        truncated = result[:2000] + "..." if len(result) > 2000 else result
+                        final_content = f"Содержимое сайта {url}:\n\n{truncated}"
+                        break
                 final_content = self._strip_think(response.content)
                 break
 
