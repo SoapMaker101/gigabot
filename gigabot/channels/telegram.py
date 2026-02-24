@@ -194,9 +194,17 @@ async def _transcribe_voice(
             )
             resp.raise_for_status()
             data = resp.json()
+            logger.debug("SaluteSpeech STT response: {}", str(data)[:500])
             results = data.get("result", [])
             if results:
-                return results[0].get("normalized_text") or results[0].get("text", "")
+                item = results[0]
+                if isinstance(item, str):
+                    return item
+                if isinstance(item, dict):
+                    return item.get("normalized_text") or item.get("text", "")
+            # Some responses have text directly in "result"
+            if isinstance(data.get("result"), str):
+                return data["result"]
             return None
     except Exception as e:
         logger.error("SaluteSpeech transcription failed: {}", e)
