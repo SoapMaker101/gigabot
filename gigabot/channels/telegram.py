@@ -140,7 +140,7 @@ async def _get_salute_token(cfg: SaluteSpeechConfig) -> str | None:
     if _salute_cache.valid:
         return _salute_cache.token
 
-    if not cfg.client_id or not cfg.client_secret:
+    if not cfg.credentials:
         return None
 
     try:
@@ -151,12 +151,9 @@ async def _get_salute_token(cfg: SaluteSpeechConfig) -> str | None:
                     "Content-Type": "application/x-www-form-urlencoded",
                     "Accept": "application/json",
                     "RqUID": str(uuid.uuid4()),
+                    "Authorization": f"Basic {cfg.credentials}",
                 },
-                data={
-                    "grant_type": "client_credentials",
-                    "scope": cfg.scope,
-                },
-                auth=(cfg.client_id, cfg.client_secret),
+                data={"scope": cfg.scope},
                 timeout=15.0,
             )
             resp.raise_for_status()
@@ -180,12 +177,16 @@ async def _transcribe_voice(
 
     try:
         audio_bytes = file_path.read_bytes()
+        if file_path.suffix.lower() == ".ogg":
+            content_type = "audio/ogg;codecs=opus"
+        else:
+            content_type = "audio/x-pcm;bit=16;rate=16000"
         async with httpx.AsyncClient(verify=False) as client:
             resp = await client.post(
                 SALUTE_STT_URL,
                 headers={
                     "Authorization": f"Bearer {token}",
-                    "Content-Type": "audio/ogg;codecs=opus",
+                    "Content-Type": content_type,
                 },
                 params={"model": cfg.stt_model},
                 content=audio_bytes,
@@ -558,7 +559,7 @@ class TelegramChannel(BaseChannel):
             return "[Voice message received, SaluteSpeech not configured]"
 
         cfg = self._salute_speech_config
-        if not cfg.client_id or not cfg.client_secret:
+        if not cfg.credentials:
             logger.debug("SaluteSpeech credentials missing, skipping transcription")
             return "[Voice message received, SaluteSpeech not configured]"
 

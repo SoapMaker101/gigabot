@@ -61,62 +61,49 @@ class KandinskyTool(Tool):
         height: int | None = None,
         **kwargs: Any,
     ) -> str:
+        import json as _json
+
+        from gigachat.models import Chat, Messages, MessagesRole
+
         size_hint = ""
         if width and height:
             size_hint = f" Размер: {width}x{height}."
 
-        generation_prompt = f"Нарисуй изображение: {prompt}.{size_hint}"
+        chat = Chat(
+            model=self._provider.default_model,
+            messages=[
+                Messages(role=MessagesRole.SYSTEM, content="Ты — Василий Кандинский."),
+                Messages(role=MessagesRole.USER, content=f"Нарисуй: {prompt}.{size_hint}"),
+            ],
+            function_call="auto",
+        )
 
         try:
-            response = await self._provider.chat(
-                messages=[{"role": "user", "content": generation_prompt}],
-                model="GigaChat-2-Max",
-            )
-        except Exception as e:
-            logger.error("GigaChat image generation request failed: {}", e)
-            return f"Ошибка при запросе генерации изображения: {e}"
+            response = self._provider._client.chat(chat)
+            content = response.choices[0].message.content or ""
 
-        file_id = self._extract_file_id(response)
-        if not file_id:
-            content = response.content or ""
-            if content:
-                return f"GigaChat не вернул изображение. Ответ: {content}"
-            return "Ошибка: GigaChat не вернул идентификатор изображения."
+            match = re.search(r'<img\s+src="([^"]+)"', content)
+            if not match:
+                return _json.dumps(
+                    {"result": f"Изображение не было сгенерировано. Ответ модели: {content[:200]}"},
+                    ensure_ascii=False,
+                )
 
-        try:
+            file_id = match.group(1)
             image_bytes = self._provider.get_image(file_id)
-        except Exception as e:
-            logger.error("Failed to download generated image {}: {}", file_id, e)
-            return f"Ошибка при загрузке изображения: {e}"
 
-        save_path = self._resolve_save_path(save_to)
-        try:
+            save_path = self._resolve_save_path(save_to)
             save_path.parent.mkdir(parents=True, exist_ok=True)
             save_path.write_bytes(image_bytes)
+
+            logger.info("Image generated and saved to {}", save_path)
+            return _json.dumps(
+                {"result": f"Изображение сохранено: {save_path}", "path": str(save_path)},
+                ensure_ascii=False,
+            )
         except Exception as e:
-            return f"Ошибка при сохранении изображения: {e}"
-
-        logger.info("Image generated and saved to {}", save_path)
-        return str(save_path)
-
-    def _extract_file_id(self, response: Any) -> str | None:
-        """Extract image file_id from GigaChat response content or function_call."""
-        if response.tool_calls:
-            for tc in response.tool_calls:
-                args = tc.arguments or {}
-                if "file_id" in args:
-                    return args["file_id"]
-
-        content = response.content or ""
-        match = re.search(r'<img\s+src="([^"]+)"', content)
-        if match:
-            return match.group(1)
-
-        match = re.search(r"file_id[\"']?\s*[:=]\s*[\"']([a-f0-9\-]+)[\"']", content)
-        if match:
-            return match.group(1)
-
-        return None
+            logger.error("Kandinsky image generation failed: {}", e)
+            return _json.dumps({"error": str(e)}, ensure_ascii=False)
 
     def _resolve_save_path(self, save_to: str | None) -> Path:
         if save_to:

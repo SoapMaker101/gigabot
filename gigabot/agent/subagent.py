@@ -12,9 +12,9 @@ from gigabot.bus.events import InboundMessage
 from gigabot.bus.queue import MessageBus
 from gigabot.providers.base import LLMProvider
 from gigabot.agent.tools.registry import ToolRegistry
-from gigabot.agent.tools.filesystem import ReadFileTool, WriteFileTool, EditFileTool, ListDirTool
+from gigabot.agent.tools.filesystem import FileTool
 from gigabot.agent.tools.shell import ExecTool
-from gigabot.agent.tools.web import WebSearchTool, WebFetchTool
+from gigabot.agent.tools.web import WebTool
 
 
 class SubagentManager:
@@ -100,17 +100,13 @@ class SubagentManager:
         try:
             tools = ToolRegistry()
             allowed_dir = self.workspace if self.restrict_to_workspace else None
-            tools.register(ReadFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
-            tools.register(WriteFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
-            tools.register(EditFileTool(workspace=self.workspace, allowed_dir=allowed_dir))
-            tools.register(ListDirTool(workspace=self.workspace, allowed_dir=allowed_dir))
+            tools.register(FileTool(workspace=self.workspace, allowed_dir=allowed_dir))
             tools.register(ExecTool(
                 working_dir=str(self.workspace),
                 timeout=self.exec_config.timeout,
                 restrict_to_workspace=self.restrict_to_workspace,
             ))
-            tools.register(WebSearchTool(api_key=self.brave_api_key))
-            tools.register(WebFetchTool())
+            tools.register(WebTool(api_key=self.brave_api_key))
 
             system_prompt = self._build_subagent_prompt(task)
             messages: list[dict[str, Any]] = [

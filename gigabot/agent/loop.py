@@ -14,20 +14,12 @@ from gigabot.agent.context import ContextBuilder
 from gigabot.agent.memory import MemoryStore
 from gigabot.agent.subagent import SubagentManager
 from gigabot.agent.tools.cron import CronTool
-from gigabot.agent.tools.filesystem import (
-    CreateProjectTool,
-    EditFileTool,
-    ListDirTool,
-    ListProjectsTool,
-    MoveFileTool,
-    ReadFileTool,
-    WriteFileTool,
-)
+from gigabot.agent.tools.filesystem import FileTool, ProjectTool
 from gigabot.agent.tools.message import MessageTool
 from gigabot.agent.tools.registry import ToolRegistry
 from gigabot.agent.tools.shell import ExecTool
 from gigabot.agent.tools.spawn import SpawnTool
-from gigabot.agent.tools.web import WebFetchTool, WebSearchTool
+from gigabot.agent.tools.web import WebTool
 from gigabot.agent.tools.rag import RAGTool
 from gigabot.agent.tools.ocr import OCRTool
 from gigabot.agent.tools.kandinsky import KandinskyTool
@@ -111,16 +103,14 @@ class AgentLoop:
     def _register_default_tools(self) -> None:
         """Register the default set of tools."""
         allowed_dir = self.workspace if self.restrict_to_workspace else None
-        for cls in (ReadFileTool, WriteFileTool, EditFileTool, ListDirTool,
-                    CreateProjectTool, MoveFileTool, ListProjectsTool):
-            self.tools.register(cls(workspace=self.workspace, allowed_dir=allowed_dir))
+        self.tools.register(FileTool(workspace=self.workspace, allowed_dir=allowed_dir))
+        self.tools.register(ProjectTool(workspace=self.workspace, allowed_dir=allowed_dir))
         self.tools.register(ExecTool(
             working_dir=str(self.workspace),
             timeout=self.exec_config.timeout,
             restrict_to_workspace=self.restrict_to_workspace,
         ))
-        self.tools.register(WebSearchTool(api_key=self.brave_api_key))
-        self.tools.register(WebFetchTool())
+        self.tools.register(WebTool(api_key=self.brave_api_key))
         self.tools.register(MessageTool(send_callback=self.bus.publish_outbound, workspace=self.workspace))
         self.tools.register(SpawnTool(manager=self.subagents))
         if self.cron_service:
@@ -142,7 +132,7 @@ class AgentLoop:
         self.tools.register(TasksTool(workspace=self.workspace, cron_service=self.cron_service))
 
         # SaluteSpeech TTS
-        if self.salute_speech_config and self.salute_speech_config.client_id:
+        if self.salute_speech_config and self.salute_speech_config.credentials:
             self.tools.register(SaluteSpeechTool(
                 salute_speech_config=self.salute_speech_config,
                 workspace=self.workspace,

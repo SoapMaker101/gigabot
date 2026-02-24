@@ -103,6 +103,13 @@ class MessageTool(Tool):
         media_raw = media or []
         media_resolved = [str(_resolve_path(m, self._workspace, None)) for m in media_raw]
 
+        for m in media_resolved:
+            if not Path(m).is_file():
+                return (
+                    f"Error: File '{m}' does not exist. "
+                    "Create it first using the 'file' tool (action='write'), then call message again."
+                )
+
         msg = OutboundMessage(
             channel=channel,
             chat_id=chat_id,

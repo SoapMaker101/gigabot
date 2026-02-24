@@ -1,7 +1,8 @@
-"""File-system tools: read, write, edit, list, project management."""
+"""File-system tools: file operations and project management."""
 
 import difflib
 import mimetypes
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -31,17 +32,25 @@ def _read_pdf(file_path: Path) -> str:
 
 
 def _read_docx(file_path: Path) -> str:
-    """Extract text from a DOCX file."""
+    """Extract text and table content from a DOCX file."""
     try:
         import docx
     except ImportError:
-        return "Error: Reading DOCX requires the python-docx package. Install with: pip install python-docx"
+        return "Error: python-docx not installed"
     try:
         doc = docx.Document(str(file_path))
-        paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
-        if not paragraphs:
+        parts = []
+        for para in doc.paragraphs:
+            if para.text.strip():
+                parts.append(para.text)
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                if cells:
+                    parts.append(" | ".join(cells))
+        if not parts:
             return "The DOCX file contains no text."
-        return "\n".join(paragraphs)
+        return "\n".join(parts)
     except Exception as e:
         return f"Error reading DOCX: {e}"
 
@@ -145,8 +154,8 @@ def _resolve_path(
 # Tool classes
 # ---------------------------------------------------------------------------
 
-class ReadFileTool(Tool):
-    """Read the contents of a file (txt, pdf, docx, xlsx)."""
+class FileTool(Tool):
+    """Unified file operations: read, write, edit, list, move."""
 
     def __init__(self, workspace: Path | None = None, allowed_dir: Path | None = None) -> None:
         self._workspace = workspace
@@ -154,14 +163,13 @@ class ReadFileTool(Tool):
 
     @property
     def name(self) -> str:
-        return "read_file"
+        return "file"
 
     @property
     def description(self) -> str:
         return (
-            "Read the contents of a file. When the user sends you a file, the message "
-            "contains a path like [file: /path/to/file]. Call read_file with that path "
-            "to get the text. Supports .txt, .docx, .pdf, .xlsx (and .doc, .xls)."
+            "Работа с файлами: чтение (txt/pdf/docx/xlsx), создание, "
+            "редактирование, просмотр каталогов, перемещение"
         )
 
     @property
@@ -169,145 +177,133 @@ class ReadFileTool(Tool):
         return {
             "type": "object",
             "properties": {
-                "path": {
+                "action": {
                     "type": "string",
-                    "description": (
-                        "Full path to the file (e.g. from [file: /path] in the user "
-                        "message). Use as-is including extension."
-                    ),
+                    "enum": ["read", "write", "edit", "list", "move"],
+                    "description": "Action to perform",
                 },
-            },
-            "required": ["path"],
-        }
-
-    async def execute(self, path: str, **kwargs: Any) -> str:
-        try:
-            file_path = _resolve_path(path, self._workspace, self._allowed_dir)
-            if not file_path.exists():
-                return f"Error: File not found: {path}"
-            if not file_path.is_file():
-                return f"Error: Not a file: {path}"
-            return _smart_read(file_path)
-        except PermissionError as e:
-            return f"Error: {e}"
-        except Exception as e:
-            return f"Error reading file: {e}"
-
-
-class WriteFileTool(Tool):
-    """Create / overwrite a file (txt, docx, xlsx)."""
-
-    def __init__(self, workspace: Path | None = None, allowed_dir: Path | None = None) -> None:
-        self._workspace = workspace
-        self._allowed_dir = allowed_dir
-
-    @property
-    def name(self) -> str:
-        return "write_file"
-
-    @property
-    def description(self) -> str:
-        return (
-            "CREATE a new file: pass path (e.g. hello.txt, report.docx) and content. "
-            "Use this when the user asks to create or send a file — create with "
-            "write_file first, then send with message(media=[path]). "
-            "Supports .txt, .docx, .xlsx. Do NOT use edit_file to create files; "
-            "edit_file only replaces text in existing files."
-        )
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
                 "path": {
                     "type": "string",
-                    "description": "The file path to write to (e.g. report.txt, report.docx, data.xlsx)",
+                    "description": "File or directory path",
                 },
                 "content": {
                     "type": "string",
-                    "description": (
-                        "The content to write (text; for xlsx, use one value per line "
-                        "for first column, or tab-separated for columns)"
-                    ),
+                    "description": "Content for write action",
+                },
+                "old_text": {
+                    "type": "string",
+                    "description": "Text to find (edit action)",
+                },
+                "new_text": {
+                    "type": "string",
+                    "description": "Replacement text (edit action)",
+                },
+                "destination": {
+                    "type": "string",
+                    "description": "Target path for move action",
                 },
             },
-            "required": ["path", "content"],
+            "required": ["action"],
         }
 
-    async def execute(self, path: str, content: str, **kwargs: Any) -> str:
+    async def execute(self, action: str, **kwargs: Any) -> str:
+        dispatch = {
+            "read": self._read,
+            "write": self._write,
+            "edit": self._edit,
+            "list": self._list,
+            "move": self._move,
+        }
+        handler = dispatch.get(action)
+        if not handler:
+            return f"Error: unknown action '{action}'. Use: read, write, edit, list, move"
         try:
-            file_path = _resolve_path(path, self._workspace, self._allowed_dir)
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            ext = file_path.suffix.lower()
-            if ext == ".docx":
-                return _write_docx(file_path, content)
-            if ext == ".xlsx":
-                return _write_xlsx(file_path, content)
-            file_path.write_text(content, encoding="utf-8")
-            return f"Successfully wrote {len(content)} bytes to {file_path}"
+            return await handler(**kwargs)
         except PermissionError as e:
             return f"Error: {e}"
         except Exception as e:
-            return f"Error writing file: {e}"
+            return f"Error ({action}): {e}"
 
+    async def _read(self, path: str = "", **_: Any) -> str:
+        if not path:
+            return "Error: 'path' is required for read"
+        file_path = _resolve_path(path, self._workspace, self._allowed_dir)
+        if not file_path.exists():
+            return f"Error: File not found: {path}"
+        if not file_path.is_file():
+            return f"Error: Not a file: {path}"
+        return _smart_read(file_path)
 
-class EditFileTool(Tool):
-    """Replace a text fragment inside an existing file."""
+    async def _write(self, path: str = "", content: str = "", **_: Any) -> str:
+        if not path:
+            return "Error: 'path' is required for write"
+        if not content:
+            return "Error: 'content' is required for write"
+        file_path = _resolve_path(path, self._workspace, self._allowed_dir)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        ext = file_path.suffix.lower()
+        if ext == ".docx":
+            return _write_docx(file_path, content)
+        if ext == ".xlsx":
+            return _write_xlsx(file_path, content)
+        file_path.write_text(content, encoding="utf-8")
+        return f"Successfully wrote {len(content)} bytes to {file_path}"
 
-    def __init__(self, workspace: Path | None = None, allowed_dir: Path | None = None) -> None:
-        self._workspace = workspace
-        self._allowed_dir = allowed_dir
+    async def _edit(self, path: str = "", old_text: str = "", new_text: str = "", **_: Any) -> str:
+        if not path:
+            return "Error: 'path' is required for edit"
+        if not old_text:
+            return "Error: 'old_text' is required for edit"
+        file_path = _resolve_path(path, self._workspace, self._allowed_dir)
+        if not file_path.exists():
+            return f"Error: File not found: {path}"
 
-    @property
-    def name(self) -> str:
-        return "edit_file"
+        content = file_path.read_text(encoding="utf-8")
+        if old_text not in content:
+            return self._not_found_message(old_text, content, path)
 
-    @property
-    def description(self) -> str:
-        return (
-            "Replace old_text with new_text in an EXISTING file. Requires path, "
-            "old_text, and new_text. Use only when the file already exists. "
-            "To CREATE a new file with content, use write_file instead."
-        )
+        count = content.count(old_text)
+        if count > 1:
+            return (
+                f"Warning: old_text appears {count} times. "
+                "Please provide more context to make it unique."
+            )
 
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "The file path to edit"},
-                "old_text": {"type": "string", "description": "The exact text to find and replace"},
-                "new_text": {"type": "string", "description": "The text to replace with"},
-            },
-            "required": ["path", "old_text", "new_text"],
-        }
+        new_content = content.replace(old_text, new_text, 1)
+        file_path.write_text(new_content, encoding="utf-8")
+        return f"Successfully edited {file_path}"
 
-    async def execute(self, path: str, old_text: str, new_text: str, **kwargs: Any) -> str:
-        try:
-            file_path = _resolve_path(path, self._workspace, self._allowed_dir)
-            if not file_path.exists():
-                return f"Error: File not found: {path}"
+    async def _list(self, path: str = "", **_: Any) -> str:
+        if not path:
+            return "Error: 'path' is required for list"
+        dir_path = _resolve_path(path, self._workspace, self._allowed_dir)
+        if not dir_path.exists():
+            return f"Error: Directory not found: {path}"
+        if not dir_path.is_dir():
+            return f"Error: Not a directory: {path}"
 
-            content = file_path.read_text(encoding="utf-8")
+        items: list[str] = []
+        for item in sorted(dir_path.iterdir()):
+            prefix = "\U0001f4c1 " if item.is_dir() else "\U0001f4c4 "
+            items.append(f"{prefix}{item.name}")
+        return "\n".join(items) if items else f"Directory {path} is empty"
 
-            if old_text not in content:
-                return self._not_found_message(old_text, content, path)
-
-            count = content.count(old_text)
-            if count > 1:
-                return (
-                    f"Warning: old_text appears {count} times. "
-                    "Please provide more context to make it unique."
-                )
-
-            new_content = content.replace(old_text, new_text, 1)
-            file_path.write_text(new_content, encoding="utf-8")
-            return f"Successfully edited {file_path}"
-        except PermissionError as e:
-            return f"Error: {e}"
-        except Exception as e:
-            return f"Error editing file: {e}"
+    async def _move(self, path: str = "", destination: str = "", **_: Any) -> str:
+        if not path:
+            return "Error: 'path' is required for move"
+        if not destination:
+            return "Error: 'destination' is required for move"
+        src = _resolve_path(path, self._workspace, self._allowed_dir)
+        dst = _resolve_path(destination, self._workspace, self._allowed_dir)
+        if not src.exists():
+            return f"Error: Source not found: {path}"
+        if not src.is_file():
+            return f"Error: Source is not a file: {path}"
+        if dst.is_dir():
+            dst = dst / src.name
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(src), str(dst))
+        return f"Moved {src} \u2192 {dst}"
 
     @staticmethod
     def _not_found_message(old_text: str, content: str, path: str) -> str:
@@ -338,53 +334,8 @@ class EditFileTool(Tool):
         return f"Error: old_text not found in {path}. No similar text found. Verify the file content."
 
 
-class ListDirTool(Tool):
-    """List directory contents."""
-
-    def __init__(self, workspace: Path | None = None, allowed_dir: Path | None = None) -> None:
-        self._workspace = workspace
-        self._allowed_dir = allowed_dir
-
-    @property
-    def name(self) -> str:
-        return "list_dir"
-
-    @property
-    def description(self) -> str:
-        return "List the contents of a directory."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "The directory path to list"},
-            },
-            "required": ["path"],
-        }
-
-    async def execute(self, path: str, **kwargs: Any) -> str:
-        try:
-            dir_path = _resolve_path(path, self._workspace, self._allowed_dir)
-            if not dir_path.exists():
-                return f"Error: Directory not found: {path}"
-            if not dir_path.is_dir():
-                return f"Error: Not a directory: {path}"
-
-            items: list[str] = []
-            for item in sorted(dir_path.iterdir()):
-                prefix = "\U0001f4c1 " if item.is_dir() else "\U0001f4c4 "
-                items.append(f"{prefix}{item.name}")
-
-            return "\n".join(items) if items else f"Directory {path} is empty"
-        except PermissionError as e:
-            return f"Error: {e}"
-        except Exception as e:
-            return f"Error listing directory: {e}"
-
-
-class CreateProjectTool(Tool):
-    """Create a project folder with standard sub-directories."""
+class ProjectTool(Tool):
+    """Project folder management: create, list, add/delete subfolders."""
 
     _SUBFOLDERS = (
         "\u0414\u043e\u0433\u043e\u0432\u043e\u0440\u044b",
@@ -400,17 +351,13 @@ class CreateProjectTool(Tool):
 
     @property
     def name(self) -> str:
-        return "create_project"
+        return "project"
 
     @property
     def description(self) -> str:
         return (
-            "Create a new project folder with standard sub-directories "
-            "(\u0414\u043e\u0433\u043e\u0432\u043e\u0440\u044b, "
-            "\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430\u0446\u0438\u044f, "
-            "\u0421\u043c\u0435\u0442\u044b, "
-            "\u0424\u043e\u0442\u043e, "
-            "\u041f\u0435\u0440\u0435\u043f\u0438\u0441\u043a\u0430)."
+            "Управление папками проектов: создание со стандартной структурой, "
+            "просмотр, добавление/удаление подпапок"
         )
 
     @property
@@ -418,135 +365,96 @@ class CreateProjectTool(Tool):
         return {
             "type": "object",
             "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["create", "list", "add_folder", "delete_folder"],
+                    "description": "Action to perform",
+                },
                 "name": {
                     "type": "string",
-                    "description": "Project name (used as the folder name)",
+                    "description": "Project name",
+                },
+                "folder_name": {
+                    "type": "string",
+                    "description": "Subfolder name (for add_folder / delete_folder)",
                 },
             },
-            "required": ["name"],
+            "required": ["action"],
         }
 
-    async def execute(self, name: str, **kwargs: Any) -> str:
+    async def execute(self, action: str, **kwargs: Any) -> str:
+        dispatch = {
+            "create": self._create,
+            "list": self._list,
+            "add_folder": self._add_folder,
+            "delete_folder": self._delete_folder,
+        }
+        handler = dispatch.get(action)
+        if not handler:
+            return f"Error: unknown action '{action}'. Use: create, list, add_folder, delete_folder"
         try:
-            if not self._workspace:
-                return "Error: workspace is not configured"
-
-            projects_dir = self._workspace / "projects"
-            project_dir = projects_dir / name
-
-            if project_dir.exists():
-                return f"Error: Project '{name}' already exists at {project_dir}"
-
-            project_dir.mkdir(parents=True, exist_ok=True)
-            created: list[str] = []
-            for sub in self._SUBFOLDERS:
-                (project_dir / sub).mkdir(exist_ok=True)
-                created.append(sub)
-
-            structure = "\n".join(f"  \U0001f4c1 {s}" for s in created)
-            return (
-                f"Project '{name}' created at {project_dir}\n"
-                f"Structure:\n{structure}"
-            )
+            return await handler(**kwargs)
         except PermissionError as e:
             return f"Error: {e}"
         except Exception as e:
-            return f"Error creating project: {e}"
-
-
-class MoveFileTool(Tool):
-    """Move a file to a target directory."""
-
-    def __init__(self, workspace: Path | None = None, allowed_dir: Path | None = None) -> None:
-        self._workspace = workspace
-        self._allowed_dir = allowed_dir
+            return f"Error ({action}): {e}"
 
     @property
-    def name(self) -> str:
-        return "move_file"
+    def _projects_dir(self) -> Path:
+        if not self._workspace:
+            raise RuntimeError("workspace is not configured")
+        return self._workspace / "projects"
 
-    @property
-    def description(self) -> str:
-        return "Move a file to a different directory."
+    async def _create(self, name: str = "", **_: Any) -> str:
+        if not name:
+            return "Error: 'name' is required for create"
+        project_dir = self._projects_dir / name
+        if project_dir.exists():
+            return f"Error: Project '{name}' already exists at {project_dir}"
 
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "source": {
-                    "type": "string",
-                    "description": "Path to the file to move",
-                },
-                "destination": {
-                    "type": "string",
-                    "description": "Target directory (or full target path) to move the file to",
-                },
-            },
-            "required": ["source", "destination"],
-        }
+        project_dir.mkdir(parents=True, exist_ok=True)
+        created: list[str] = []
+        for sub in self._SUBFOLDERS:
+            (project_dir / sub).mkdir(exist_ok=True)
+            created.append(sub)
 
-    async def execute(self, source: str, destination: str, **kwargs: Any) -> str:
-        try:
-            src = _resolve_path(source, self._workspace, self._allowed_dir)
-            dst = _resolve_path(destination, self._workspace, self._allowed_dir)
+        structure = "\n".join(f"  \U0001f4c1 {s}" for s in created)
+        return f"Project '{name}' created at {project_dir}\nStructure:\n{structure}"
 
-            if not src.exists():
-                return f"Error: Source not found: {source}"
-            if not src.is_file():
-                return f"Error: Source is not a file: {source}"
+    async def _list(self, **_: Any) -> str:
+        projects_dir = self._projects_dir
+        if not projects_dir.exists():
+            return "No projects directory found."
+        dirs = sorted(p.name for p in projects_dir.iterdir() if p.is_dir())
+        if not dirs:
+            return "No projects found."
+        lines = [f"\U0001f4c1 {d}" for d in dirs]
+        return f"Projects ({len(dirs)}):\n" + "\n".join(lines)
 
-            if dst.is_dir():
-                dst = dst / src.name
+    async def _add_folder(self, name: str = "", folder_name: str = "", **_: Any) -> str:
+        if not name:
+            return "Error: 'name' (project name) is required"
+        if not folder_name:
+            return "Error: 'folder_name' is required"
+        project_dir = self._projects_dir / name
+        if not project_dir.exists():
+            return f"Error: Project '{name}' not found"
+        new_folder = project_dir / folder_name
+        if new_folder.exists():
+            return f"Folder '{folder_name}' already exists in project '{name}'"
+        new_folder.mkdir(parents=True, exist_ok=True)
+        return f"Added folder '{folder_name}' to project '{name}'"
 
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            src.rename(dst)
-            return f"Moved {src} \u2192 {dst}"
-        except PermissionError as e:
-            return f"Error: {e}"
-        except Exception as e:
-            return f"Error moving file: {e}"
-
-
-class ListProjectsTool(Tool):
-    """List all projects in the workspace/projects/ directory."""
-
-    def __init__(self, workspace: Path | None = None, allowed_dir: Path | None = None) -> None:
-        self._workspace = workspace
-        self._allowed_dir = allowed_dir
-
-    @property
-    def name(self) -> str:
-        return "list_projects"
-
-    @property
-    def description(self) -> str:
-        return "List all projects in the workspace."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        }
-
-    async def execute(self, **kwargs: Any) -> str:
-        try:
-            if not self._workspace:
-                return "Error: workspace is not configured"
-
-            projects_dir = self._workspace / "projects"
-            if not projects_dir.exists():
-                return "No projects directory found."
-
-            dirs = sorted(
-                p.name for p in projects_dir.iterdir() if p.is_dir()
-            )
-            if not dirs:
-                return "No projects found."
-
-            lines = [f"\U0001f4c1 {d}" for d in dirs]
-            return f"Projects ({len(dirs)}):\n" + "\n".join(lines)
-        except Exception as e:
-            return f"Error listing projects: {e}"
+    async def _delete_folder(self, name: str = "", folder_name: str = "", **_: Any) -> str:
+        if not name:
+            return "Error: 'name' (project name) is required"
+        if not folder_name:
+            return "Error: 'folder_name' is required"
+        project_dir = self._projects_dir / name
+        if not project_dir.exists():
+            return f"Error: Project '{name}' not found"
+        target = project_dir / folder_name
+        if not target.exists():
+            return f"Error: Folder '{folder_name}' not found in project '{name}'"
+        shutil.rmtree(target)
+        return f"Deleted folder '{folder_name}' from project '{name}'"

@@ -24,8 +24,7 @@ class GigaChatConfig(Base):
 
 class SaluteSpeechConfig(Base):
     """SaluteSpeech API configuration."""
-    client_id: str = ""
-    client_secret: str = ""
+    credentials: str = ""  # base64(client_id:client_secret)
     scope: str = "SALUTE_SPEECH_PERS"
     stt_model: str = "general"
     tts_voice: str = "Nec_24000"

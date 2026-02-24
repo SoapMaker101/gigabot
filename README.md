@@ -66,8 +66,7 @@ gigabot onboard
     "model": "GigaChat-2-Max"
   },
   "saluteSpeech": {
-    "clientId": "ВСТАВЬ_CLIENT_ID",
-    "clientSecret": "ВСТАВЬ_CLIENT_SECRET"
+    "credentials": "ВСТАВЬ_BASE64_ОТ_SALUTESPEECH"
   },
   "telegram": {
     "enabled": true,
@@ -211,6 +210,7 @@ gigabot/
 ### SaluteSpeech
 1. На [developers.sber.ru](https://developers.sber.ru) создайте проект SaluteSpeech
 2. Получите Client ID и Client Secret
+3. Закодируйте: `echo -n "CLIENT_ID:CLIENT_SECRET" | base64`
 
 ### Telegram Bot
 1. Создайте бота через [@BotFather](https://t.me/BotFather)

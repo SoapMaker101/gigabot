@@ -648,7 +648,7 @@ def status():
 
     console.print()
     ss = config.salute_speech
-    has_speech = bool(ss.client_id and ss.client_secret)
+    has_speech = bool(ss.credentials)
     console.print(
         f"SaluteSpeech: "
         f"{'[green]✓ настроен[/green]' if has_speech else '[dim]не настроен[/dim]'}"

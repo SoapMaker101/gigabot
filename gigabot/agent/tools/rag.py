@@ -43,7 +43,7 @@ class RAGTool(Tool):
 
     @property
     def description(self) -> str:
-        return "RAG: создание проектов базы знаний, индексация файлов, поиск по документам"
+        return "База знаний (RAG): создание коллекций, индексация документов, семантический поиск по содержимому файлов. НЕ путать с project (папки проектов)."
 
     @property
     def parameters(self) -> dict[str, Any]:

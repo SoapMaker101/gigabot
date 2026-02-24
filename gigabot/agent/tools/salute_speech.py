@@ -78,10 +78,10 @@ class SaluteSpeechTool(Tool):
         voice: str | None = None,
         **kwargs: Any,
     ) -> str:
-        if not self._config.client_id or not self._config.client_secret:
+        if not self._config.credentials:
             return (
                 "Ошибка: не настроены учётные данные SaluteSpeech "
-                "(client_id / client_secret)."
+                "(credentials)."
             )
 
         token = await self._get_token()
@@ -138,12 +138,9 @@ class SaluteSpeechTool(Tool):
                         "Content-Type": "application/x-www-form-urlencoded",
                         "Accept": "application/json",
                         "RqUID": str(uuid.uuid4()),
+                        "Authorization": f"Basic {self._config.credentials}",
                     },
-                    data={
-                        "grant_type": "client_credentials",
-                        "scope": self._config.scope,
-                    },
-                    auth=(self._config.client_id, self._config.client_secret),
+                    data={"scope": self._config.scope},
                     timeout=15.0,
                 )
                 resp.raise_for_status()

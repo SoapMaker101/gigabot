@@ -1,4 +1,4 @@
-"""Web tools: web_search and web_fetch."""
+"""Web tool: search and fetch in a single tool."""
 
 import html
 import json
@@ -42,38 +42,70 @@ def _validate_url(url: str) -> tuple[bool, str]:
         return False, str(e)
 
 
-class WebSearchTool(Tool):
-    """Search the web using Brave Search API."""
+class WebTool(Tool):
+    """Unified web tool: search the internet and fetch page content."""
 
-    def __init__(self, api_key: str | None = None, max_results: int = 5):
+    def __init__(self, api_key: str | None = None, max_results: int = 5, max_chars: int = 50000):
         self.api_key = api_key or os.environ.get("BRAVE_API_KEY", "")
         self.max_results = max_results
+        self.max_chars = max_chars
 
     @property
     def name(self) -> str:
-        return "web_search"
+        return "web"
 
     @property
     def description(self) -> str:
-        return "Search the web. Returns titles, URLs, and snippets."
+        return "Поиск в интернете и получение содержимого веб-страниц"
 
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Search query"},
+                "action": {
+                    "type": "string",
+                    "enum": ["search", "fetch"],
+                    "description": "Action: search the web or fetch a URL",
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Search query (for search action)",
+                },
+                "url": {
+                    "type": "string",
+                    "description": "URL to fetch (for fetch action)",
+                },
                 "count": {
                     "type": "integer",
-                    "description": "Results (1-10)",
+                    "description": "Number of search results (1-10)",
                     "minimum": 1,
                     "maximum": 10,
                 },
+                "extract_mode": {
+                    "type": "string",
+                    "enum": ["markdown", "text"],
+                    "description": "Extraction mode for fetch (default: markdown)",
+                },
+                "max_chars": {
+                    "type": "integer",
+                    "description": "Max characters for fetch result",
+                    "minimum": 100,
+                },
             },
-            "required": ["query"],
+            "required": ["action"],
         }
 
-    async def execute(self, query: str, count: int | None = None, **kwargs: Any) -> str:
+    async def execute(self, action: str, **kwargs: Any) -> str:
+        if action == "search":
+            return await self._search(**kwargs)
+        if action == "fetch":
+            return await self._fetch(**kwargs)
+        return f"Error: unknown action '{action}'. Use: search, fetch"
+
+    async def _search(self, query: str = "", count: int | None = None, **_: Any) -> str:
+        if not query:
+            return "Error: 'query' is required for search"
         if not self.api_key:
             return "Error: BRAVE_API_KEY not configured"
 
@@ -104,43 +136,15 @@ class WebSearchTool(Tool):
         except Exception as e:
             return f"Error: {e}"
 
-
-class WebFetchTool(Tool):
-    """Fetch and extract content from a URL using Readability."""
-
-    def __init__(self, max_chars: int = 50000):
-        self.max_chars = max_chars
-
-    @property
-    def name(self) -> str:
-        return "web_fetch"
-
-    @property
-    def description(self) -> str:
-        return "Fetch URL and extract readable content (HTML → markdown/text)."
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "url": {"type": "string", "description": "URL to fetch"},
-                "extractMode": {
-                    "type": "string",
-                    "enum": ["markdown", "text"],
-                    "default": "markdown",
-                },
-                "maxChars": {"type": "integer", "minimum": 100},
-            },
-            "required": ["url"],
-        }
-
-    async def execute(
-        self, url: str, extractMode: str = "markdown", maxChars: int | None = None, **kwargs: Any
+    async def _fetch(
+        self, url: str = "", extract_mode: str = "markdown", max_chars: int | None = None, **_: Any,
     ) -> str:
         from readability import Document
 
-        max_chars = maxChars or self.max_chars
+        if not url:
+            return "Error: 'url' is required for fetch"
+
+        limit = max_chars or self.max_chars
 
         is_valid, error_msg = _validate_url(url)
         if not is_valid:
@@ -164,7 +168,7 @@ class WebFetchTool(Tool):
                 text, extractor = json.dumps(r.json(), indent=2, ensure_ascii=False), "json"
             elif "text/html" in ctype or r.text[:256].lower().startswith(("<!doctype", "<html")):
                 doc = Document(r.text)
-                if extractMode == "markdown":
+                if extract_mode == "markdown":
                     content = self._to_markdown(doc.summary())
                 else:
                     content = _strip_tags(doc.summary())
@@ -173,9 +177,9 @@ class WebFetchTool(Tool):
             else:
                 text, extractor = r.text, "raw"
 
-            truncated = len(text) > max_chars
+            truncated = len(text) > limit
             if truncated:
-                text = text[:max_chars]
+                text = text[:limit]
 
             return json.dumps(
                 {
