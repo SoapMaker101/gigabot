@@ -380,7 +380,7 @@ class ProjectTool(Tool):
                 },
                 "folder_name": {
                     "type": "string",
-                    "description": "Subfolder name (for add_folder / delete_folder / move_file)",
+                    "description": "Subfolder name: for move_file — обязательно, если пользователь указал папку (например 'Документация', 'Сметы'). Для add_folder/delete_folder — имя подпапки.",
                 },
                 "file_path": {
                     "type": "string",
