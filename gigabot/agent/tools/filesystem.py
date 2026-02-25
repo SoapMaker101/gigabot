@@ -371,8 +371,8 @@ class ProjectTool(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["create", "list", "add_folder", "delete_folder", "move_file", "send_files"],
-                    "description": "Action to perform. send_files — получить пути файлов из проекта/папки для отправки пользователю",
+                    "enum": ["create", "list", "add_folder", "delete_folder", "delete_project", "move_file", "send_files"],
+                    "description": "Action to perform. delete_project — удалить проект целиком (папку со всем содержимым). send_files — пути файлов для отправки пользователю",
                 },
                 "name": {
                     "type": "string",
@@ -396,12 +396,13 @@ class ProjectTool(Tool):
             "list": self._list,
             "add_folder": self._add_folder,
             "delete_folder": self._delete_folder,
+            "delete_project": self._delete_project,
             "move_file": self._move_file,
             "send_files": self._send_files,
         }
         handler = dispatch.get(action)
         if not handler:
-            return f"Error: unknown action '{action}'. Use: create, list, add_folder, delete_folder, move_file, send_files"
+            return f"Error: unknown action '{action}'. Use: create, list, add_folder, delete_folder, delete_project, move_file, send_files"
         try:
             return await handler(**kwargs)
         except PermissionError as e:
@@ -468,6 +469,18 @@ class ProjectTool(Tool):
             return f"Error: Folder '{folder_name}' not found in project '{name}'"
         shutil.rmtree(target)
         return f"Deleted folder '{folder_name}' from project '{name}'"
+
+    async def _delete_project(self, name: str = "", **_: Any) -> str:
+        """Delete entire project directory and all its contents."""
+        if not name:
+            return "Error: 'name' (project name) is required for delete_project"
+        project_dir = self._projects_dir / name
+        if not project_dir.exists():
+            return f"Error: Project '{name}' not found"
+        if not project_dir.is_dir():
+            return f"Error: '{name}' is not a project directory"
+        shutil.rmtree(project_dir)
+        return f"Project '{name}' deleted."
 
     @staticmethod
     def _clean_telegram_filename(name: str) -> str:

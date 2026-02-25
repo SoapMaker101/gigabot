@@ -92,6 +92,33 @@ pip install -e .
 sudo systemctl restart gigabot
 ```
 
+### Важно: откуда сервис берёт код
+
+Сервис запускает бота из **того venv, который указан в `ExecStart`** в unit-файле. Установка пакета (`pip install -e .`) должна выполняться **в этом же venv**, иначе подхватится старая версия из site-packages.
+
+**Если исходники лежат в `/opt/gigabot/source`, а сервис запускается из `/home/gigabot/gigabot/.venv`:**
+
+```bash
+# Активировать venv сервиса (см. ExecStart в unit-файле)
+source /home/gigabot/gigabot/.venv/bin/activate
+# Установить пакет из /opt (editable)
+pip install -e /opt/gigabot/source
+sudo systemctl restart gigabot
+```
+
+Перед обновлением можно подтянуть код в `/opt/gigabot/source`: `cd /opt/gigabot/source && git pull origin main`.
+
+**Проверка, что запускается нужный код:**
+
+```bash
+# Какой venv у сервиса
+sudo systemctl cat gigabot | grep -i exec
+
+# Откуда реально грузится пакет (должен быть путь к исходникам)
+/home/gigabot/gigabot/.venv/bin/python3 -c "import gigabot.agent.tools.rag as r; print(r.__file__)"
+# Ожидаемо: /opt/gigabot/source/gigabot/agent/tools/rag.py (или ваш каталог с исходниками)
+```
+
 ## Логи
 
 ```bash

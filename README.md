@@ -229,6 +229,8 @@ pip install -e .
 sudo systemctl restart gigabot
 ```
 
+> **Если исходники в `/opt/gigabot/source`, а сервис запускается из другого venv** (например `/home/gigabot/gigabot/.venv`) — устанавливать нужно в тот venv: `source /path/to/that/.venv/bin/activate` и `pip install -e /opt/gigabot/source`. Подробно: [docs/SERVER-INSTALL.md](docs/SERVER-INSTALL.md) (раздел «Важно: откуда сервис берёт код»).
+
 Проверка:
 
 ```bash
