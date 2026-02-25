@@ -42,9 +42,9 @@ class TelegramConfig(Base):
 class RAGConfig(Base):
     """RAG configuration."""
     chroma_dir: str = "~/.gigabot/rag_db"
-    embed_model: str = "Embeddings"
-    chunk_size: int = 1000
-    chunk_overlap: int = 200
+    embed_model: str = "EmbeddingsGigaR"
+    chunk_size: int = 3500
+    chunk_overlap: int = 400
     top_k: int = 5
 
 

@@ -107,6 +107,8 @@ response = self._client.embeddings(texts=texts, model=model)
 
 После деплоя индексация PDF/DOCX должна проходить без ошибки `unexpected keyword argument 'input'`.
 
+В v0.5 по умолчанию используется модель **EmbeddingsGigaR** (конфиг `embed_model`); в RAG tool чанки отправляются в API пакетами по 5 (`_EMBED_BATCH_SIZE`).
+
 ---
 
 ## Проверка цепочки RAG (чтение → чанки → эмбеддинги)

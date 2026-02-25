@@ -91,6 +91,20 @@ python -c "from readability import Document; print('OK')"
 | 4 | Отправить PDF + "Добавь в базу знаний test" | knowledge(index_file) → OK |
 | 5 | "Найди в базе test информацию о люках" | knowledge(search) → релевантные фрагменты |
 
+## Итог v0.5 (выполнено)
+
+| # | Задача | Статус |
+|---|--------|--------|
+| 1 | project(send_files) | ✅ Реализовано в filesystem.py |
+| 2 | Промпт «отправь файл» ≠ «прочитай» | ✅ Правило 2.1 и блок про вложения в context.py |
+| 3 | file(write) без content — жёсткая ошибка | ✅ Усиленное сообщение в filesystem.py |
+| 4 | RAG: тест index + search | ✅ Исправлен вызов embeddings (texts=), модель EmbeddingsGigaR, батчинг; пути из Telegram через loop |
+| 5 | Деплой и тесты | ✅ docs/DEPLOY-v0.5.md |
+
+RAG: индексация PDF/DOCX заработала после исправления вызова `embeddings()` в `gigachat_provider.py` (см. RAG-ISSUE-ASSESSMENT.md).
+
+---
+
 ## Деплой
 
 ```bash

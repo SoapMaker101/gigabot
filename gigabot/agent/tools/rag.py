@@ -149,8 +149,16 @@ class RAGTool(Tool):
             raise ValueError(f"Не является файлом: {file_path}")
         return _smart_read(p)
 
+    _MAX_EMBED_CHARS = 6000
+    _EMBED_BATCH_SIZE = 5
+
     def _embed_texts(self, texts: list[str]) -> list[list[float]]:
-        return self._provider.get_embeddings(texts, model=self._embed_model)
+        safe = [t[:self._MAX_EMBED_CHARS] if len(t) > self._MAX_EMBED_CHARS else t for t in texts]
+        all_embeddings: list[list[float]] = []
+        for i in range(0, len(safe), self._EMBED_BATCH_SIZE):
+            batch = safe[i : i + self._EMBED_BATCH_SIZE]
+            all_embeddings.extend(self._provider.get_embeddings(batch, model=self._embed_model))
+        return all_embeddings
 
     # ------------------------------------------------------------------
     # Actions
