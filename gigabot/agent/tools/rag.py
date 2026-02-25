@@ -162,6 +162,22 @@ class RAGTool(Tool):
             return raw
         return [c.name for c in raw]
 
+    def _resolve_project_dir(self, project: str) -> Path | None:
+        """Resolve project name to actual project directory under workspace/projects.
+        Handles both exact name (e.g. 'Коттедж на Горной') and normalized name (e.g. 'Kottedzh_na_Gornoy').
+        """
+        projects_root = self._workspace / "projects"
+        if not projects_root.exists():
+            return None
+        direct = projects_root / project
+        if direct.exists() and direct.is_dir():
+            return direct
+        norm = _normalize_collection_name(project)
+        for d in projects_root.iterdir():
+            if d.is_dir() and _normalize_collection_name(d.name) == norm:
+                return d
+        return None
+
     def _get_or_create_collection(self, project: str):
         col_name = _normalize_collection_name(project)
         return self._client.get_or_create_collection(
@@ -289,8 +305,16 @@ class RAGTool(Tool):
         if not project:
             return "Ошибка: не указано имя проекта (project)"
 
+        project_dir = self._resolve_project_dir(project)
         if not folder_path and folder_name:
-            folder_path = str(self._workspace / "projects" / project / folder_name)
+            if project_dir is not None:
+                folder_path = str(project_dir / folder_name)
+            else:
+                folder_path = str(self._workspace / "projects" / project / folder_name)
+        elif folder_path and project_dir is not None:
+            p = Path(folder_path).expanduser()
+            if not p.is_absolute() and "/" not in folder_path and "\\" not in folder_path:
+                folder_path = str(project_dir / folder_path)
         if not folder_path:
             return "Ошибка: укажите folder_path или пару project + folder_name (например folder_name='Документация')"
 
