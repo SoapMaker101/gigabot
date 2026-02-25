@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,39 @@ from gigabot.agent.tools.filesystem import _smart_read
 from gigabot.config.schema import RAGConfig
 
 _SUPPORTED_EXTENSIONS = {".txt", ".pdf", ".docx", ".doc", ".xlsx", ".xls"}
+
+_CYRILLIC_TO_LATIN = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "yo",
+    "ж": "zh", "з": "z", "и": "i", "й": "j", "к": "k", "л": "l", "м": "m",
+    "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+    "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "shch",
+    "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+}
+
+
+def _normalize_collection_name(name: str) -> str:
+    """Convert arbitrary project name to ChromaDB-compatible collection name.
+
+    ChromaDB requires: 3-63 chars, alphanumeric start/end,
+    only alphanumeric/underscore/hyphen inside.
+    """
+    lowered = name.lower().strip()
+    result: list[str] = []
+    for ch in lowered:
+        if ch in _CYRILLIC_TO_LATIN:
+            result.append(_CYRILLIC_TO_LATIN[ch])
+        elif ch.isascii() and ch.isalnum():
+            result.append(ch)
+        elif ch in (" ", "_", "-", "."):
+            result.append("_")
+        else:
+            result.append("_")
+    normalized = re.sub(r"_+", "_", "".join(result)).strip("_")
+    if len(normalized) < 3:
+        normalized = normalized.ljust(3, "x")
+    if len(normalized) > 63:
+        normalized = normalized[:63].rstrip("_")
+    return normalized
 
 
 class RAGTool(Tool):
@@ -119,9 +153,10 @@ class RAGTool(Tool):
         return [c.name for c in raw]
 
     def _get_or_create_collection(self, project: str):
+        col_name = _normalize_collection_name(project)
         return self._client.get_or_create_collection(
-            name=project,
-            metadata={"hnsw:space": "cosine"},
+            name=col_name,
+            metadata={"hnsw:space": "cosine", "display_name": project},
         )
 
     @staticmethod
@@ -169,13 +204,14 @@ class RAGTool(Tool):
         if not project:
             return "Ошибка: не указано имя проекта. Пример: knowledge(action='create_project', project='мой_проект')"
 
+        col_name = _normalize_collection_name(project)
         existing = self._list_collection_names()
-        if project in existing:
+        if col_name in existing:
             return f"Проект '{project}' уже существует."
 
         self._client.create_collection(
-            name=project,
-            metadata={"hnsw:space": "cosine"},
+            name=col_name,
+            metadata={"hnsw:space": "cosine", "display_name": project},
         )
         return f"Проект '{project}' успешно создан."
 
@@ -183,8 +219,9 @@ class RAGTool(Tool):
         project = kwargs.get("project")
         if not project:
             return "Ошибка: не указано имя проекта (project)"
+        col_name = _normalize_collection_name(project)
         try:
-            self._client.delete_collection(name=project)
+            self._client.delete_collection(name=col_name)
             return f"Проект '{project}' удалён."
         except ValueError:
             return f"Ошибка: проект '{project}' не найден."
@@ -196,7 +233,8 @@ class RAGTool(Tool):
         lines: list[str] = []
         for name in names:
             c = self._client.get_collection(name)
-            lines.append(f"  • {name} ({c.count()} документов)")
+            display = (c.metadata or {}).get("display_name", name)
+            lines.append(f"  • {display} ({c.count()} документов)")
         return f"Проекты ({len(names)}):\n" + "\n".join(lines)
 
     async def _index_file(self, **kwargs: Any) -> str:
@@ -291,13 +329,16 @@ class RAGTool(Tool):
         if not query:
             return "Ошибка: не указан поисковый запрос. Пример: knowledge(action='search', project='мой_проект', query='текст запроса')"
 
+        col_name = _normalize_collection_name(project)
         try:
-            collection = self._client.get_collection(project)
+            collection = self._client.get_collection(col_name)
         except ValueError:
             return f"Ошибка: проект '{project}' не найден."
 
+        display = (collection.metadata or {}).get("display_name", project)
+
         if collection.count() == 0:
-            return f"Проект '{project}' пуст — сначала проиндексируйте файлы."
+            return f"Проект '{display}' пуст — сначала проиндексируйте файлы."
 
         top_k = min(top_k, collection.count())
         query_embedding = self._embed_texts([query])[0]
@@ -313,9 +354,9 @@ class RAGTool(Tool):
         distances = results.get("distances", [[]])[0]
 
         if not documents:
-            return f"По запросу '{query}' ничего не найдено в проекте '{project}'."
+            return f"По запросу '{query}' ничего не найдено в проекте '{display}'."
 
-        parts: list[str] = [f"Результаты поиска в '{project}' по запросу: «{query}» (топ-{len(documents)}):\n"]
+        parts: list[str] = [f"Результаты поиска в '{display}' по запросу: «{query}» (топ-{len(documents)}):\n"]
         for i, (doc, meta, dist) in enumerate(zip(documents, metadatas, distances), 1):
             source = meta.get("source", "?") if meta else "?"
             score = 1 - dist
