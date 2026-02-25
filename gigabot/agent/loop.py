@@ -118,7 +118,13 @@ class AgentLoop:
 
         # RAG
         try:
-            self.tools.register(RAGTool(provider=self.provider, rag_config=self.rag_config))
+            self.tools.register(
+                RAGTool(
+                    provider=self.provider,
+                    rag_config=self.rag_config,
+                    workspace=self.workspace,
+                )
+            )
         except Exception as e:
             logger.warning("RAG tool not available: {}", e)
 

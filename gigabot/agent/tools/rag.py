@@ -52,11 +52,17 @@ def _normalize_collection_name(name: str) -> str:
 class RAGTool(Tool):
     """RAG: создание проектов базы знаний, индексация файлов, поиск по документам."""
 
-    def __init__(self, provider: Any, rag_config: RAGConfig) -> None:
+    def __init__(
+        self,
+        provider: Any,
+        rag_config: RAGConfig,
+        workspace: Path | None = None,
+    ) -> None:
         import chromadb
 
         self._provider = provider
         self._config = rag_config
+        self._workspace = Path(workspace or "~/.gigabot/workspace").expanduser().resolve()
 
         chroma_dir = str(Path(rag_config.chroma_dir).expanduser())
         os.makedirs(chroma_dir, exist_ok=True)
@@ -110,7 +116,11 @@ class RAGTool(Tool):
                 },
                 "folder_path": {
                     "type": "string",
-                    "description": "Путь к папке для пакетной индексации",
+                    "description": "Полный путь к папке для индексации (если не указан folder_name)",
+                },
+                "folder_name": {
+                    "type": "string",
+                    "description": "Имя папки внутри проекта (для index_folder). Если указаны project и folder_name, путь строится автоматически: workspace/projects/{project}/{folder_name}. Имя проекта для пути не менять (кириллица допустима).",
                 },
                 "top_k": {
                     "type": "integer",
@@ -275,10 +285,14 @@ class RAGTool(Tool):
     async def _index_folder(self, **kwargs: Any) -> str:
         project = kwargs.get("project")
         folder_path = kwargs.get("folder_path")
+        folder_name = kwargs.get("folder_name")
         if not project:
             return "Ошибка: не указано имя проекта (project)"
+
+        if not folder_path and folder_name:
+            folder_path = str(self._workspace / "projects" / project / folder_name)
         if not folder_path:
-            return "Ошибка: не указан путь к папке (folder_path)"
+            return "Ошибка: укажите folder_path или пару project + folder_name (например folder_name='Документация')"
 
         folder = Path(folder_path).expanduser().resolve()
         if not folder.exists():
