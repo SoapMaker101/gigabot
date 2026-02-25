@@ -238,7 +238,11 @@ class FileTool(Tool):
         if not path:
             return "Error: 'path' is required for write. Пример: file(action='write', path='output.txt', content='...')"
         if not content:
-            return "Error: 'content' is required for write. Пример: file(action='write', path='output.txt', content='текст файла')"
+            return (
+                "СТОП: параметр content не указан. Ты ДОЛЖЕН спросить у пользователя, что записать в файл. "
+                "Ответь текстом с вопросом, например: «Что записать в этот файл?» "
+                "НЕ вызывай file(write) повторно без content."
+            )
         file_path = _resolve_path(path, self._workspace, self._allowed_dir)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         ext = file_path.suffix.lower()
@@ -357,7 +361,7 @@ class ProjectTool(Tool):
     def description(self) -> str:
         return (
             "Управление папками проектов: создание, просмотр, подпапки, "
-            "перемещение файлов в проект"
+            "перемещение файлов в проект, отправка файлов пользователю (send_files)"
         )
 
     @property
@@ -367,8 +371,8 @@ class ProjectTool(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["create", "list", "add_folder", "delete_folder", "move_file"],
-                    "description": "Action to perform",
+                    "enum": ["create", "list", "add_folder", "delete_folder", "move_file", "send_files"],
+                    "description": "Action to perform. send_files — получить пути файлов из проекта/папки для отправки пользователю",
                 },
                 "name": {
                     "type": "string",
@@ -393,10 +397,11 @@ class ProjectTool(Tool):
             "add_folder": self._add_folder,
             "delete_folder": self._delete_folder,
             "move_file": self._move_file,
+            "send_files": self._send_files,
         }
         handler = dispatch.get(action)
         if not handler:
-            return f"Error: unknown action '{action}'. Use: create, list, add_folder, delete_folder, move_file"
+            return f"Error: unknown action '{action}'. Use: create, list, add_folder, delete_folder, move_file, send_files"
         try:
             return await handler(**kwargs)
         except PermissionError as e:
@@ -514,3 +519,56 @@ class ProjectTool(Tool):
         dst = target_dir / clean_name
         shutil.move(str(src), str(dst))
         return f"Файл '{clean_name}' перемещён в проект '{name}/{folder_name}'" if folder_name else f"Файл '{clean_name}' перемещён в проект '{name}'"
+
+    async def _send_files(self, name: str = "", folder_name: str = "", **_: Any) -> str:
+        """Собрать пути файлов из проекта (или подпапки) для отправки пользователю."""
+        if not name:
+            return (
+                "Error: 'name' (project name) is required. "
+                "Пример: project(action='send_files', name='Тест', folder_name='Сметы') или "
+                "project(action='send_files', name='Тест') — все файлы из проекта"
+            )
+        project_dir = self._projects_dir / name
+        if not project_dir.exists():
+            available = sorted(p.name for p in self._projects_dir.iterdir() if p.is_dir()) if self._projects_dir.exists() else []
+            hint = f" Доступные проекты: {', '.join(available)}" if available else ""
+            return f"Error: Project '{name}' not found.{hint}"
+
+        if folder_name:
+            target_dir = project_dir / folder_name
+            if not target_dir.exists():
+                subfolders = sorted(d.name for d in project_dir.iterdir() if d.is_dir())
+                hint = f" Доступные подпапки: {', '.join(subfolders)}" if subfolders else ""
+                return f"Error: Folder '{folder_name}' not found in project '{name}'.{hint}"
+            scan_dirs = [target_dir]
+        else:
+            scan_dirs = [project_dir]
+            for d in project_dir.iterdir():
+                if d.is_dir():
+                    scan_dirs.append(d)
+
+        files: list[Path] = []
+        for dir_path in scan_dirs:
+            for p in dir_path.rglob("*"):
+                if p.is_file():
+                    try:
+                        resolved = p.resolve()
+                        if self._allowed_dir and not str(resolved).startswith(str(self._allowed_dir.resolve())):
+                            continue
+                        files.append(resolved)
+                    except (PermissionError, OSError):
+                        continue
+
+        if not files:
+            scope = f"{name}/{folder_name}" if folder_name else name
+            return f"В проекте '{scope}' нет файлов для отправки."
+
+        paths = sorted(str(p) for p in files)
+        paths_repr = ", ".join(f'"{p}"' for p in paths)
+        return (
+            f"Найдено файлов: {len(paths)}.\n"
+            f"Чтобы ОТПРАВИТЬ их пользователю, вызови message с media:\n"
+            f"message(content='Вот файлы из проекта {name}" + (f"/{folder_name}" if folder_name else "") + "', media=["
+            + paths_repr
+            + "])"
+        )
