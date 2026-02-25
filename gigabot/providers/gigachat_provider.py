@@ -189,7 +189,7 @@ class GigaChatProvider(LLMProvider):
 
     def get_embeddings(self, texts: list[str], model: str = "Embeddings") -> list[list[float]]:
         """Get embeddings for RAG via GigaChat Embeddings API."""
-        response = self._client.embeddings(input=texts, model=model)
+        response = self._client.embeddings(texts=texts, model=model)
         return [item.embedding for item in response.data]
 
     def get_image(self, file_id: str) -> bytes:
